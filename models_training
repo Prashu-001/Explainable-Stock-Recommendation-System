@@ -174,9 +174,35 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
 
     # Train ARIMA
     out['models']['arima'], out['tests']['arima_ljungbox'], out['tests']['arima_arch'] = build_arima(arima_train, n_test, arima_test)
-    # Train LSTM
+    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['arima']['returns'], out['models']['arima']['lower'], out['models']['arima']['upper'], title=f"{symbol} - ARIMA Forecast")
     out['models']['lstm'], out['tests']['lstm_ljungbox'], out['tests']['lstm_arch'] = build_lstm(x_train, y_train, x_test, y_test)
-    
+    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['lstm']['returns'], out['models']['lstm']['lower'], out['models']['lstm']['upper'], title=f"{symbol} - LSTM Forecast")
+
+    lstm_score = out['models']['lstm']['score']
+    arima_score = out['models']['lstm']['score']
+    total = np.exp(lstm_score)+np.exp(arima_score)
+    lstm_weight = np.exp(lstm_score)/total
+    arima_weight = np.exp(arima_score)/total
+
+    lstm_preds = np.array(out['models']['lstm']['preds'])
+    arima_preds = np.array(out['models']['arima']['preds'])
+    lstm_returns = np.array(out['models']['lstm']['returns'])
+    arima_returns = np.array(out['models']['arima']['returns'])
+    lstm_lower = np.array(out['models']['lstm']['lower'])
+    arima_lower = np.array(out['models']['arima']['lower'])
+    lstm_upper = np.array(out['models']['lstm']['upper'])
+    arima_upper = np.array(out['models']['arima']['upper'])
+
+    out['models']['ensemble'] = {}
+    out['models']['ensemble']['preds'] = lstm_weight * lstm_preds + arima_preds * arima_preds
+    out['models']['ensemble']['returns'] = lstm_weight * lstm_returns + arima_weight * arima_returns
+    out['models']['ensemble']['lower'] = lstm_weight * lstm_lower + arima_weight * arima_lower
+    out['models']['ensemble']['upper'] = lstm_weight * lstm_upper + arima_weight * arima_upper
+    # evaluate against true prices
+    out['models']['ensemble']['metrics'] = compute_metrics(y_test.values, out['models']['ensemble']['preds'])
+    out['models']['ensemble']['ci_cov'] = compute_ci_coverage(y_test.values, out['models']['ensemble']['lower'], out['models']['ensemble']['upper'])
+    out['models']['ensemble']['score'] = reliability_score(out['models']['ensemble']['metrics'], out['models']['ensemble']['ci_cov'])
+
     # Select best model by score where available
     best_name, best_info = None, None
     best_score = -np.inf
@@ -187,6 +213,9 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
                 best_name = name
                 best_info = info
     out['best_model'] = {'name': best_name, 'info': best_info, 'best_score': best_score}
+    
+    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['ensemble']['returns'], out['models']['ensemble']['lower'], out['models']['ensemble']['upper'], title=f"{symbol} - ensemble Forecast")
+    
     return out
 
 results = []
