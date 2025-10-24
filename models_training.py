@@ -1,14 +1,20 @@
+import pandas as pd
+import numpy as np
+import pickle
 from sklearn.preprocessing import MinMaxScaler
 import pmdarima as pm
 from arch import arch_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import LSTM, Dropout, Dense, Input
 
-def train_arima(series: pd.Series, seasonal: bool = False, m: int = 1) -> Dict[str, Any]:
+from statistical_tests import ljung_box_test, angle_arch_test
+from Evaluation&Reliability import compute_metrics, compute_ci_coverage, reliability_score
+
+def train_arima(series: pd.Series, seasonal: bool = False, m: int = 1):
     model = pm.auto_arima(series, seasonal=seasonal, m=m, error_action='ignore', suppress_warnings=True)
     return {'model': model, 'name': 'ARIMA', 'order': model.order, 'seasonal_order': model.seasonal_order}
 
-def forecast_arima(model_obj, steps: int = 5) -> np.ndarray:
+def forecast_arima(model_obj, steps: int = 5):
     return model_obj.predict(n_periods=steps)
 
 def build_lstm_functional(input_shape, lstm_units=50, dropout_rate=0.2, dense_units=1):
@@ -69,6 +75,15 @@ def forecast_garch(res, horizon: int = 5) -> Dict[str, np.ndarray]:
         mean_fc = np.zeros_like(std_fc)
     return {'variance': var_fc, 'std': std_fc, 'mean': mean_fc}
 
+def preds_to_returns(preds: np.ndarray, residuals) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    returns = np.exp(preds).cumprod()
+    
+    # naive CI using in-sample resid std (heuristic)
+    resid_std = np.std(residuals) if residuals is not None else 0.0
+    lower = returns - 1.96 * resid_std
+    upper = returns + 1.96 * resid_std
+    return returns, lower, upper
+
 def build_arima(arima_train, n_test, arima_test):
     arima_res = train_arima(arima_train)
     arima_preds = forecast_arima(arima_res['model'], steps=n_test)
@@ -101,14 +116,14 @@ def build_arima(arima_train, n_test, arima_test):
         
     # evaluate against true prices
     metrics = compute_metrics(arima_test.values, arima_preds)
-    ci_cov = compute_ci_coverage(arima_test.values, lower, upper)
+    ci_cov = compute_ci_coverage(np.exp(arima_test.values).cumprod(), lower, upper)
     score = reliability_score(metrics, ci_cov)
     if model == 'ARIMA':
         models = arima_res
     else:
         models = {'arima': arima_res, 'garch': garch_res}
         
-    return {'meta': models, 'returns': returns.tolist(),'lower': lower.tolist(), 
+    return {'model_name':model, 'meta': models, 'returns': returns.tolist(),'lower': lower.tolist(), 
                             'upper': upper.tolist(),'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, arima_ljungbox, arima_arch
 
 def build_lstm(x_train, y_train,x_test, y_test):
@@ -140,22 +155,21 @@ def build_lstm(x_train, y_train,x_test, y_test):
 
     # evaluate against true prices
     metrics = compute_metrics(y_test.values, lstm_res['preds'])
-    ci_cov = compute_ci_coverage(y_test.values, lower, upper)
+    ci_cov = compute_ci_coverage(np.exp(y_test.values).cumprod(), lower, upper)
     score = reliability_score(metrics, ci_cov)
     if model == 'LSTM':
         models = lstm_res
     else:
         models = {'lstm': lstm_res, 'garch': garch_res}
     
-    return {'meta': models, 'returns': lstm_returns.tolist(),'lower': lower.tolist(), 'upper': upper.tolist(),
+    return {'model_name':model, 'meta': models, 'returns': lstm_returns.tolist(),'lower': lower.tolist(), 'upper': upper.tolist(),
                                                 'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, lstm_ljungbox, lstm_arch
 
                   
 def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_period=5):
+    col = symbol
+    symbol = symbol.split('_')[1]
     out = {'symbol': symbol, 'tests': {}, 'models': {}}
-    out['symbol'] = symbol
-    symbol = symbol.split('.')[0]
-    col = 'Close_'+symbol
 
     series = df[col].ffill().dropna()
     y = np.log(series).diff(5)
@@ -193,14 +207,14 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
     lstm_upper = np.array(out['models']['lstm']['upper'])
     arima_upper = np.array(out['models']['arima']['upper'])
 
-    out['models']['ensemble'] = {}
-    out['models']['ensemble']['preds'] = lstm_weight * lstm_preds + arima_preds * arima_preds
+    out['models']['ensemble'] = {'model_name': 'ensemble', 'meta': {out['models']['arima']['model_name']: out['models']['arima']['meta'], out['models']['lstm']['model_name']: out['models']['lstm']['meta']}
+    ensemble_preds = lstm_weight * lstm_preds + arima_preds * arima_preds
     out['models']['ensemble']['returns'] = lstm_weight * lstm_returns + arima_weight * arima_returns
     out['models']['ensemble']['lower'] = lstm_weight * lstm_lower + arima_weight * arima_lower
     out['models']['ensemble']['upper'] = lstm_weight * lstm_upper + arima_weight * arima_upper
     # evaluate against true prices
-    out['models']['ensemble']['metrics'] = compute_metrics(y_test.values, out['models']['ensemble']['preds'])
-    out['models']['ensemble']['ci_cov'] = compute_ci_coverage(y_test.values, out['models']['ensemble']['lower'], out['models']['ensemble']['upper'])
+    out['models']['ensemble']['metrics'] = compute_metrics(y_test.values, ensemble_preds)
+    out['models']['ensemble']['ci_cov'] = compute_ci_coverage(np.exp(y_test.values).cumprod(), out['models']['ensemble']['lower'], out['models']['ensemble']['upper'])
     out['models']['ensemble']['score'] = reliability_score(out['models']['ensemble']['metrics'], out['models']['ensemble']['ci_cov'])
 
     # Select best model by score where available
@@ -212,12 +226,22 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
                 best_score = info['score']
                 best_name = name
                 best_info = info
-    out['best_model'] = {'name': best_name, 'info': best_info, 'best_score': best_score}
-    
+    if best_name == 'ensemble':
+        best_model = out['models']['ensemble']
+    else if best_name == 'arima':
+        best_model = out['models']['arima']
+    else:
+        best_model = out['models']['lstm']
     plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['ensemble']['returns'], out['models']['ensemble']['lower'], out['models']['ensemble']['upper'], title=f"{symbol} - ensemble Forecast")
     
-    return out
+    return best_model
 
-results = []
-for symbol in tickers:
+# load_dataset
+df = pd.read_csv('datasets/stocks_data.csv')
+results = {}
+for symbol in df.columns:
     result = pipeline_for_stock(symbol, df)
+    symbol = symbol.split('_')[1]
+    results[symbol] = result
+with open("datasets/models_data.pkl", "wb") as f:
+    pickle.dump(results, f)
