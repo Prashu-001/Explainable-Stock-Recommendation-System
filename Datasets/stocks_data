@@ -1,0 +1,14 @@
+import yfinance as fy
+tickers = [
+    "TCS.NS", "INFY.NS", "HCLTECH.NS", "TECHM.NS", "LTIM.NS",
+    "PAYTM.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS",
+    "KOTAKBANK.NS", "AXISBANK.NS", "BAJFINANCE.NS", "YESBANK.NS",
+    "SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "LUPIN.NS", "DIVISLAB.NS",
+    "RELIANCE.NS", "NTPC.NS", "ADANIGREEN.NS", "ADANIENT.NS",
+    "HINDUNILVR.NS", "NESTLEIND.NS", "BRITANNIA.NS", "DABUR.NS", "GODREJCP.NS",
+    "MARUTI.NS", "TATAMOTORS.NS", "HEROMOTOCO.NS", "BOSCHLTD.NS"
+]
+
+df = yf.download(tickers, period = '3y', interval = '1d')
+df.columns = ['_'.join(col).split('.')[0] for col in df.columns.values]
+df = df.bfill()
