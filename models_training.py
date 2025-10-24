@@ -119,9 +119,9 @@ def build_arima(arima_train, n_test, arima_test):
     ci_cov = compute_ci_coverage(np.exp(arima_test.values).cumprod(), lower, upper)
     score = reliability_score(metrics, ci_cov)
     if model == 'ARIMA':
-        models = arima_res
+        models = arima_res['model']
     else:
-        models = {'arima': arima_res, 'garch': garch_res}
+        models = {'arima': arima_res['model'], 'garch': garch_res['model']}
         
     return {'model_name':model, 'meta': models, 'returns': returns.tolist(),'lower': lower.tolist(), 
                             'upper': upper.tolist(),'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, arima_ljungbox, arima_arch
@@ -158,9 +158,9 @@ def build_lstm(x_train, y_train,x_test, y_test):
     ci_cov = compute_ci_coverage(np.exp(y_test.values).cumprod(), lower, upper)
     score = reliability_score(metrics, ci_cov)
     if model == 'LSTM':
-        models = lstm_res
+        models = lstm_res['model']
     else:
-        models = {'lstm': lstm_res, 'garch': garch_res}
+        models = {'lstm': lstm_res['model'], 'garch': garch_res['model']}
     
     return {'model_name':model, 'meta': models, 'returns': lstm_returns.tolist(),'lower': lower.tolist(), 'upper': upper.tolist(),
                                                 'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, lstm_ljungbox, lstm_arch
@@ -207,15 +207,19 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
     lstm_upper = np.array(out['models']['lstm']['upper'])
     arima_upper = np.array(out['models']['arima']['upper'])
 
-    out['models']['ensemble'] = {'model_name': 'ensemble', 'meta': {out['models']['arima']['model_name']: out['models']['arima']['meta'], out['models']['lstm']['model_name']: out['models']['lstm']['meta']}
-    ensemble_preds = lstm_weight * lstm_preds + arima_preds * arima_preds
-    out['models']['ensemble']['returns'] = lstm_weight * lstm_returns + arima_weight * arima_returns
-    out['models']['ensemble']['lower'] = lstm_weight * lstm_lower + arima_weight * arima_lower
-    out['models']['ensemble']['upper'] = lstm_weight * lstm_upper + arima_weight * arima_upper
+    arima_model = out['models']['arima']['model_name']
+    lstm_model = out['models']['lstm']['model_name']
+    model_name = arima_model + '-' + lstm_model
+    out['models'][model_name] = {'model_name':'ensemble',out['models']['arima']['model_name']:out['models']['arima']['meta'],
+                                out['models']['lstm']['model_name']:out['models']['lstm']['meta']}
+    out['models'][model_name]['preds'] = lstm_weight * lstm_preds + arima_preds * arima_preds
+    out['models'][model_name]['returns'] = lstm_weight * lstm_returns + arima_weight * arima_returns
+    out['models'][model_name]['lower'] = lstm_weight * lstm_lower + arima_weight * arima_lower
+    out['models'][model_name]['upper'] = lstm_weight * lstm_upper + arima_weight * arima_upper
     # evaluate against true prices
-    out['models']['ensemble']['metrics'] = compute_metrics(y_test.values, ensemble_preds)
-    out['models']['ensemble']['ci_cov'] = compute_ci_coverage(np.exp(y_test.values).cumprod(), out['models']['ensemble']['lower'], out['models']['ensemble']['upper'])
-    out['models']['ensemble']['score'] = reliability_score(out['models']['ensemble']['metrics'], out['models']['ensemble']['ci_cov'])
+    out['models'][model_name]['metrics'] = compute_metrics(y_test.values, out['models'][model_name]['preds'])
+    out['models'][model_name]['ci_cov'] = compute_ci_coverage(np.exp(y_test.values).cumprod(), out['models'][model_name]['lower'], out['models'][model_name]['upper'])
+    out['models'][model_name]['score'] = reliability_score(out['models'][model_name]['metrics'], out['models'][model_name]['ci_cov'])
 
     # Select best model by score where available
     best_name, best_info = None, None
@@ -228,7 +232,7 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
                 best_info = info
     if best_name == 'ensemble':
         best_model = out['models']['ensemble']
-    else if best_name == 'arima':
+    elif best_name == 'arima':
         best_model = out['models']['arima']
     else:
         best_model = out['models']['lstm']
@@ -240,8 +244,32 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
 df = pd.read_csv('datasets/stocks_data.csv')
 results = {}
 for symbol in df.columns:
-    result = pipeline_for_stock(symbol, df)
     symbol = symbol.split('_')[1]
-    results[symbol] = result
+    results[symbol] = pipeline_for_stock(symbol, df)
+
+#create dataframe
+rows = []
+for symbol, info in results.items():
+    model_name = info.get('model_name')
+    metrics = info.get('metrics')
+    model_obj = info.get('meta')
+    
+    row = {
+        'symbol': symbol,
+        'model_name': model_name,
+        'model_obj': model_obj,
+        'rmse': metrics.get('rmse'),
+        'mape': metrics.get('mape'),
+        'resid_std': metrics.get('resid_std'),
+        'score': info.get('score'),
+        'returns': info.get('returns'),
+        'preds': info.get('preds'),
+        'lower': info.get('lower'),
+        'upper': info.get('upper'),
+    }
+    rows.append(row)
+
+models_data = pd.DataFrame(rows)
+
 with open("datasets/models_data.pkl", "wb") as f:
-    pickle.dump(results, f)
+    pickle.dump(models_data, f)
