@@ -1,4 +1,8 @@
 import yfinance as fy
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+
 tickers = [
     "TCS.NS", "INFY.NS", "HCLTECH.NS", "TECHM.NS", "LTIM.NS",
     "PAYTM.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS",
