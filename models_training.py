@@ -6,9 +6,11 @@ import pmdarima as pm
 from arch import arch_model
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import LSTM, Dropout, Dense, Input
+from sklearn.metrics import mean_squared_error as mse, mean_absolute_percentage_error
+from itertools import product
 
-from statistical_tests import ljung_box_test, angle_arch_test
-from Evaluation&Reliability import compute_metrics, compute_ci_coverage, reliability_score
+from statistical_tests import ljung_box_test, engle_arch_test
+from models_evaluation import compute_metrics, compute_ci_coverage, reliability_score
 
 def train_arima(series: pd.Series, seasonal: bool = False, m: int = 1):
     model = pm.auto_arima(series, seasonal=seasonal, m=m, error_action='ignore', suppress_warnings=True)
@@ -56,13 +58,13 @@ def forecast_lstm(model_obj, series: pd.Series, steps: int = 5) -> np.ndarray:
         seq.append(p)
     return np.array(preds)
 
-def train_garch(returns: pd.Series, p: int = 1, q: int = 1, mean: str = 'Zero', vol: str = 'Garch', dist: str = 'normal') -> Dict[str, Any]:
+def train_garch(returns: pd.Series, p: int = 1, q: int = 1, mean: str = 'Zero', vol: str = 'Garch', dist: str = 'normal'):
     # returns should be a stationary series (log-returns or resid in returns)
     am = arch_model(returns, mean=mean, vol=vol, p=p, q=q, dist=dist)
     res = am.fit(disp='off')
     return {'model': res, 'name': f'GARCH({p},{q})'}
 
-def forecast_garch(res, horizon: int = 5) -> Dict[str, np.ndarray]:
+def forecast_garch(res, horizon: int = 5):
     fc = res.forecast(horizon=horizon, reindex=False)
     # variance forecasts for next horizon steps
     var_fc = fc.variance.iloc[-1].values  # shape (horizon,)
@@ -75,7 +77,7 @@ def forecast_garch(res, horizon: int = 5) -> Dict[str, np.ndarray]:
         mean_fc = np.zeros_like(std_fc)
     return {'variance': var_fc, 'std': std_fc, 'mean': mean_fc}
 
-def preds_to_returns(preds: np.ndarray, residuals) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def preds_to_returns(preds: np.ndarray, residuals):
     returns = np.exp(preds).cumprod()
     
     # naive CI using in-sample resid std (heuristic)
@@ -109,8 +111,8 @@ def build_arima(arima_train, n_test, arima_test):
         mean_preds = np.array(arima_preds)
         # cumulative variances
         cum_var = np.cumsum(garch_fc['variance'])
-        lower = last_price * np.exp(np.cumsum(mean_preds) - 1.96 * np.sqrt(cum_var))
-        upper = last_price * np.exp(np.cumsum(mean_preds) + 1.96 * np.sqrt(cum_var))
+        lower = np.exp(np.cumsum(mean_preds) - 1.96 * np.sqrt(cum_var))
+        upper = np.exp(np.cumsum(mean_preds) + 1.96 * np.sqrt(cum_var))
         #lower = last_price * np.exp(mean_preds - 1.96 * garch_fc['variance'])
         #upper = last_price * np.exp(mean_preds + 1.96 * garch_fc['variance'])
         
@@ -123,7 +125,7 @@ def build_arima(arima_train, n_test, arima_test):
     else:
         models = {'arima': arima_res['model'], 'garch': garch_res['model']}
         
-    return {'model_name':model, 'meta': models, 'returns': returns.tolist(),'lower': lower.tolist(), 
+    return {'model_name':model, 'meta': models, 'preds':arima_preds, 'returns': returns.tolist(),'lower': lower.tolist(), 
                             'upper': upper.tolist(),'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, arima_ljungbox, arima_arch
 
 def build_lstm(x_train, y_train,x_test, y_test):
@@ -162,7 +164,7 @@ def build_lstm(x_train, y_train,x_test, y_test):
     else:
         models = {'lstm': lstm_res['model'], 'garch': garch_res['model']}
     
-    return {'model_name':model, 'meta': models, 'returns': lstm_returns.tolist(),'lower': lower.tolist(), 'upper': upper.tolist(),
+    return {'model_name':model, 'meta': models, 'returns': lstm_returns.tolist(), 'preds':lstm_res['preds'],'lower': lower.tolist(), 'upper': upper.tolist(),
                                                 'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, lstm_ljungbox, lstm_arch
 
                   
@@ -188,9 +190,9 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
 
     # Train ARIMA
     out['models']['arima'], out['tests']['arima_ljungbox'], out['tests']['arima_arch'] = build_arima(arima_train, n_test, arima_test)
-    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['arima']['returns'], out['models']['arima']['lower'], out['models']['arima']['upper'], title=f"{symbol} - ARIMA Forecast")
+    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['arima']['returns'], out['models']['arima']['lower'], out['models']['arima']['upper'], title=f"{symbol} - ARIMA Forecast")
     out['models']['lstm'], out['tests']['lstm_ljungbox'], out['tests']['lstm_arch'] = build_lstm(x_train, y_train, x_test, y_test)
-    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['lstm']['returns'], out['models']['lstm']['lower'], out['models']['lstm']['upper'], title=f"{symbol} - LSTM Forecast")
+    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['lstm']['returns'], out['models']['lstm']['lower'], out['models']['lstm']['upper'], title=f"{symbol} - LSTM Forecast")
 
     lstm_score = out['models']['lstm']['score']
     arima_score = out['models']['lstm']['score']
@@ -236,16 +238,17 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
         best_model = out['models']['arima']
     else:
         best_model = out['models']['lstm']
-    plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['ensemble']['returns'], out['models']['ensemble']['lower'], out['models']['ensemble']['upper'], title=f"{symbol} - ensemble Forecast")
+    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['ensemble']['returns'], out['models']['ensemble']['lower'], out['models']['ensemble']['upper'], title=f"{symbol} - ensemble Forecast")
     
     return best_model
 
 # load_dataset
-df = pd.read_csv('datasets/stocks_data.csv')
+df = pd.read_csv('datasets/stock_data.csv')
+df = df.set_index('Date')
 results = {}
 for symbol in df.columns:
-    symbol = symbol.split('_')[1]
-    results[symbol] = pipeline_for_stock(symbol, df)
+    symbol1 = symbol.split('_')[1]
+    results[symbol1] = pipeline_for_stock(symbol, df)
 
 #create dataframe
 rows = []
