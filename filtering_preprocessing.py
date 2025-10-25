@@ -63,6 +63,7 @@ models_data['symbol'] = models_data['symbol'] + '.NS'
 models_data = models_data.set_index('symbol')
 
 metrics_df['pred_signal'] = models_data['returns'].apply(lambda x: np.mean(np.array(x)-1) if isinstance(x, list) else np.nan)
+metrics_df['mean_returns'] = models_data['returns'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
 metrics_df['lower_mean_returns'] = models_data['lower'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
 metrics_df['upper_mean_returns'] = models_data['upper'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
 metrics_df.reset_index(names='symbol', inplace = True)

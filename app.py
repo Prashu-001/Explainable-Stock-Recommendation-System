@@ -1,7 +1,12 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import yfinance as yf
+import pickle
 from sklearn.metrics.pairwise import cosine_similarity
+from visualization import plot_series, plot_forecast, plot_stock_radar, plot_feature_similarity, plot_volatility_cagr
+import warnings
+warnings.filterwarnings('ignore')
 
 # -----------------------------
 # Load Data
@@ -14,6 +19,11 @@ def load_data():
     investments_df = pd.read_csv('datasets/users_investment_data.csv')
     investments_df = investments_df.set_index('user_id')
 
+    with open("datasets/models_data.pkl", "rb") as f:
+        models_data = pickle.load(f)
+
+    models_data['symbol'] = models_data['symbol'] + '.NS'
+    models_data = models_data.set_index('symbol')
     
     # Create content-based similarity
     features = clean_df
@@ -24,9 +34,9 @@ def load_data():
     item_similarity = cosine_similarity(investments_df.T)
     item_sim_df = pd.DataFrame(item_similarity, index=investments_df.columns, columns=investments_df.columns)
     
-    return metrics_df, investments_df, similarity_df, item_sim_df
+    return metrics_df, investments_df, similarity_df, item_sim_df, models_data
 
-metrics_df, investments_df, similarity_df, item_sim_df = load_data()
+metrics_df, investments_df, similarity_df, item_sim_df, models_data = load_data()
 # -----------------------------
 # Content similarity
 # -----------------------------
@@ -73,8 +83,11 @@ def recommend_cf(user_stocks, top_n=10):
 # -----------------------------
 # Rank by predicted returns + risk
 # -----------------------------
-def rank_stocks_by_prediction_and_risk(stock_list, user_risk):
-    subset = metrics_df.loc[stock_list].copy()
+def rank_stocks_by_prediction_and_risk(stock_list, user_risk, top_final=5):
+    if stock_list == 'None':
+        subset = metrics_df.copy()
+    else:
+        subset = metrics_df.loc[stock_list].copy()
     
     # Base score
     subset['pred_score'] = (0.5*subset['pred_signal'] +
@@ -88,7 +101,7 @@ def rank_stocks_by_prediction_and_risk(stock_list, user_risk):
                                 0.35*subset['lower_mean_returns'] +
                                 0.15*subset['upper_mean_returns'])
         subset['pred_score'] *= (1 - subset['Volatility'])
-    elif user_risk == "Balanced":
+    elif (user_risk == "Balanced") or (user_risk == "Others"):
         subset['pred_score'] *= (1 - abs(subset['Volatility'] - 0.5))
     elif user_risk == "Aggressive":
         # Give more weights to the stocks with higher upper returns and higher volatility.
@@ -97,7 +110,7 @@ def rank_stocks_by_prediction_and_risk(stock_list, user_risk):
                                 0.35*subset['upper_mean_returns'])
         subset['pred_score'] *= subset['Volatility']
     
-    return subset.sort_values('pred_score', ascending=False).index.tolist()
+    return subset.sort_values('pred_score', ascending=False).index.tolist()[:top_final]
 
 # -----------------------------
 # Hybrid recommendation pipeline
@@ -110,41 +123,132 @@ def hybrid_recommendation(user_stocks, user_risk, top_similar=10, top_cf=10, top
     # 3. Merge candidates
     all_candidates = list(set(content_candidates + cf_candidates))
     # 4. Rank by predicted return + risk
-    ranked_candidates = rank_stocks_by_prediction_and_risk(all_candidates, user_risk)
+    ranked_candidates = rank_stocks_by_prediction_and_risk(all_candidates, user_risk, top_final)
     
     # 5. Return top-N recommendations
-    return ranked_candidates[:top_final]
-
+    return ranked_candidates
 
 # -----------------------------
-# Streamlit UI
+# Streamlit Page Config
 # -----------------------------
-st.set_page_config(page_title="Stock Recommender", page_icon="📈", layout="wide")
-st.title("📈 AI-Powered Stock Recommendation System")
+st.set_page_config(page_title="AI Stock Recommender", page_icon="📈", layout="wide")
 
+# -----------------------------
+# Custom CSS for Styling
+# -----------------------------
 st.markdown("""
-This app recommends stocks based on:
-- Your current portfolio  
-- Your risk profile  
-- Predicted performance and volatility metrics
-""")
+    <style>
+        /* Background and Font */
+        body {
+            background-color: #f7f9fc;
+            color: #2c3e50;
+            font-family: 'Inter', sans-serif;
+        }
+        .main-title {
+            font-size: 2.2em;
+            font-weight: 700;
+            color: white;
+            background: linear-gradient(90deg, #2c3e50, #3498db);
+            padding: 1rem 2rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+        .section {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .stButton>button {
+            width: 100%;
+            border-radius: 10px;
+            height: 3em;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            color: white;
+            font-weight: bold;
+            border: none;
+            transition: all 0.3s ease;
+        }
+        .stButton>button:hover {
+            transform: scale(1.03);
+            background: linear-gradient(90deg, #2ecc71, #3498db);
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+# -----------------------------
+# Header
+# -----------------------------
+col1, col2 = st.columns([2, 1])
+with col1:
+    st.markdown('<div class="main-title">📈 AI-Powered Stock Recommendation System</div>', unsafe_allow_html=True)
+    st.markdown("""
+    Get **personalized stock recommendations** based on your:
+    - 📊 Current portfolio  
+    - ⚖️ Risk profile  
+    - 🚀 Predicted performance and volatility metrics  
+    """)
+with col2:
+    st.image("https://cdn-icons-png.flaticon.com/512/2331/2331953.png", width=180)
+
+st.markdown("---")
 
 # -----------------------------
 # User Inputs
 # -----------------------------
-all_stocks = metrics_df.index.tolist()
-user_stocks = st.multiselect("Select Stocks in Your Portfolio:", options=all_stocks)
+st.markdown("### 🧩 Customize Your Profile")
 
-risk_profile = st.radio("Select Your Risk Profile:", ["Conservative", "Balanced", "Aggressive"])
-
-if st.button("Get Recommendations"):
-    if not user_stocks:
-        st.warning("⚠️ Please select at least one stock.")
-    else:
-        recs = hybrid_recommendation(user_stocks, risk_profile, top_similar=10, top_final=5)
-        st.subheader("🎯 Hybrid Stock Recommendations")
-        rec_df = metrics_df.loc[recs, ['pred_signal', 'lower_mean_returns', 'upper_mean_returns', 'Volatility']]
-        st.dataframe(rec_df)
+col1, col2 = st.columns([2, 1])
+with col1:
+    all_stocks = metrics_df.index.tolist() + ['None']
+    user_stocks = st.multiselect("Select Stocks in Your Portfolio:", options=all_stocks)
+    user_stocks = [s for s in user_stocks if s != "None"]
+with col2:
+    risk_profile = st.radio("Select Your Risk Profile:", ["Conservative", "Balanced", "Aggressive", "Others"])
 
 st.markdown("---")
-st.caption("Developed by Prashu Poras | IITG")
+
+# -----------------------------
+# Recommendation Section
+# -----------------------------
+if st.button("Get My Recommendations"):
+    if not user_stocks:
+        recs = rank_stocks_by_prediction_and_risk('None', risk_profile, top_final=5)
+    else:
+        recs = hybrid_recommendation(user_stocks, risk_profile, top_similar=10, top_final=5)
+
+    st.markdown("## 🎯 Top Recommended Stocks")
+    rec_df = metrics_df.loc[recs, ['mean_returns', 'lower_mean_returns', 'upper_mean_returns', 'Volatility']]
+    st.dataframe(rec_df.style.highlight_max(axis=0, color="#2AA456"))
+
+    st.markdown("## 📊 Deep Dive Analytics")
+
+    for stock in recs:
+        with st.expander(f"🔍 Detailed Insights for {stock}", expanded=False):
+            tab1, tab2, tab3, tab4 = st.tabs(["📈 Performance", "🧭 Radar", "⚙️ Feature Similarity", "📉 Volatility vs CAGR"])
+
+            with tab1:
+                series = yf.download(stock, period='3y', interval='1d')['Close']
+                fig, desc = plot_series(series, title=f"{stock} Price Trend")
+                st.pyplot(fig)
+                st.markdown(desc)
+
+            with tab2:
+                fig, desc = plot_stock_radar([stock] + recs, metrics_df)
+                st.pyplot(fig)
+                st.markdown(desc)
+
+            with tab3:
+                features = ['CAGR', 'Volatility', 'Sharpe_Ratio', 'Mean_Return']
+                fig, desc = plot_feature_similarity(stock, recs, metrics_df, features)
+                st.pyplot(fig)
+                st.markdown(desc)
+
+            with tab4:
+                fig, desc = plot_volatility_cagr(metrics_df, stock, user_stocks)
+                st.pyplot(fig)
+                st.markdown(desc)
+
+st.markdown("---")
+st.caption("💡 Developed by **Prashu Poras | IIT Guwahati** · Powered by AI · © 2025")

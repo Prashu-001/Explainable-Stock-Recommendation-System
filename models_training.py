@@ -223,6 +223,9 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
     out['models'][model_name]['ci_cov'] = compute_ci_coverage(np.exp(y_test.values).cumprod(), out['models'][model_name]['lower'], out['models'][model_name]['upper'])
     out['models'][model_name]['score'] = reliability_score(out['models'][model_name]['metrics'], out['models'][model_name]['ci_cov'])
 
+    out['models'][model_name]['test'] = np.exp(arima_test).cumprod()
+    out['models']['arima']['test'] = np.exp(arima_test).cumprod()
+    out['models']['lstm']['test'] = np.exp(arima_test).cumprod()
     # Select best model by score where available
     best_name, best_info = None, None
     best_score = -np.inf
@@ -269,6 +272,7 @@ for symbol, info in results.items():
         'preds': info.get('preds'),
         'lower': info.get('lower'),
         'upper': info.get('upper'),
+        'test' :info.get('test')
     }
     rows.append(row)
 
