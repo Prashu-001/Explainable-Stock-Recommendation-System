@@ -225,9 +225,9 @@ for _, row in users_df.iterrows():
     investment_data.append(inv)
 
 investments_df = pd.DataFrame(investment_data).set_index('user_id')
-# -----------------------------
+# ----------------------------
 # Ensure every stock has at least one investor
-# -----------------------------
+# ----------------------------
 for stock in scaled_num_df['symbol']:
     if investments_df[stock].sum() == 0:
         random_user = np.random.choice(investments_df.index)

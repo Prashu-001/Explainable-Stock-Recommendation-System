@@ -78,7 +78,6 @@ def plot_stock_radar(symbols, df):
 
     return fig, explanation
 
-
 # -----------------------------
 # Feature similarity bar plot
 # -----------------------------

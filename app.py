@@ -250,5 +250,5 @@ if st.button("Get My Recommendations"):
                 st.pyplot(fig)
                 st.markdown(desc)
 
-st.markdown("---")
+st.markdown("--")
 st.caption("💡 Developed by **Prashu Poras | IIT Guwahati** · Powered by AI · © 2025")

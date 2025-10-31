@@ -89,7 +89,7 @@ def forecast_garch(res, horizon: int = 5):
     # variance forecasts for next horizon steps
     var_fc = fc.variance.iloc[-1].values  # shape (horizon,)
     std_fc = np.sqrt(var_fc)
-    # sometimes fc.mean exists, otherwise zeros
+    # sometimes fc.mean exists, otherwise zeros.
     mean_fc = None
     try:
         mean_fc = fc.mean.iloc[-1].values
