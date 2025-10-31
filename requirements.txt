@@ -7,7 +7,6 @@ scipy>=1.10.0
 
 # Statsmodels and econometrics
 statsmodels>=0.14.0
-pmdarima
 arch
 
 # Machine Learning / Deep Learning

@@ -1,26 +1,55 @@
+import pickle
 import yfinance as yf
-import pandas as pd
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.impute import KNNImputer
+
+np.random.seed(42)
 
 tickers = [
-    "TCS.NS", "INFY.NS", "HCLTECH.NS", "TECHM.NS", "LTIM.NS",
-    "PAYTM.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS",
-    "KOTAKBANK.NS", "AXISBANK.NS", "BAJFINANCE.NS", "YESBANK.NS",
-    "SUNPHARMA.NS", "DRREDDY.NS", "CIPLA.NS", "LUPIN.NS", "DIVISLAB.NS",
-    "RELIANCE.NS", "NTPC.NS", "ADANIGREEN.NS", "ADANIENT.NS",
-    "HINDUNILVR.NS", "NESTLEIND.NS", "BRITANNIA.NS", "DABUR.NS", "GODREJCP.NS",
-    "MARUTI.NS", "TATAMOTORS.NS", "HEROMOTOCO.NS", "BOSCHLTD.NS"
+    #------Tech/IT------
+    "TCS.NS","INFY.NS","HCLTECH.NS","TECHM.NS","LTIM.NS","WIPRO.NS","COFORGE.NS",
+    "PERSISTENT.NS","MPHASIS.NS",
+
+    # ---- Banking & Financial Services ----
+    "HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","KOTAKBANK.NS","AXISBANK.NS",
+    "BAJFINANCE.NS","HDFCAMC.NS","HDFCLIFE.NS","YESBANK.NS",
+
+    # ---- Fintech / Digital ----
+    "PAYTM.NS","POLICYBZR.NS",
+
+    # ---- Pharma & Healthcare ----
+    "SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","LUPIN.NS","DIVISLAB.NS",
+    "APOLLOHOSP.NS","FORTIS.NS",
+
+    # ---- Energy / Oil & Gas ----
+    "RELIANCE.NS","ONGC.NS","POWERGRID.NS","IOC.NS","GAIL.NS","BPCL.NS",
+    # ---- Utilities (Renewables, Power) ----
+    "NTPC.NS","ADANIGREEN.NS","TATAPOWER.NS",
+    # ---- Consumer Defensive / FMCG ----
+    "HINDUNILVR.NS","NESTLEIND.NS","BRITANNIA.NS","DABUR.NS","GODREJCP.NS",
+    "ITC.NS","MARICO.NS",
+    # ---- Consumer Cyclical / Auto ----
+    "MARUTI.NS","TATAMOTORS.NS","HEROMOTOCO.NS","EICHERMOT.NS","BOSCHLTD.NS",
+    "BAJAJ-AUTO.NS",
+    # ---- Metals & Mining ----
+    "TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS",
+    # ---- Telecom ----
+    "BHARTIARTL.NS","IDEA.NS",
+    # ---- Infrastructure / Industrials ----
+    "LT.NS","ADANIENT.NS","ULTRACEMCO.NS","SHREECEM.NS"
 ]
 
+years = 3
 df = yf.download(tickers, period = '3y', interval = '1d')['Close']
 df.columns = ['Close_' + col.split('.')[0] for col in df.columns]
-df = df.bfill().ffill()
-df.to_csv("datasets/stock_data.csv")
+null=df.isnull().sum()
+cols_with_missings=list(null[null>0].index)
+df[cols_with_missings]=df[cols_with_missings].bfill()
 
-# derived stocks metrics.
 info_dict = {}
-
 for ticker in tickers:
     col = 'Close_' + ticker.split('.')[0]
     returns_col = 'returns_' + ticker.split('.')[0]
@@ -51,6 +80,20 @@ for ticker in tickers:
 # Convert to DataFrame for better readability
 metrics_df = pd.DataFrame(info_dict).T
 
+with open("datasets/models_data.pkl", "rb") as f:
+    models_data = pickle.load(f)
+
+models_data['symbol'] = models_data['symbol'] + '.NS'
+models_data = models_data.set_index('symbol')
+
+metrics_df['pred_signal'] = models_data['returns'].apply(lambda x: np.mean(np.array(x)-1) if isinstance(x, list) else np.nan)
+metrics_df['mean_returns'] = models_data['returns'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
+metrics_df['lower_mean_returns'] = models_data['lower'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
+metrics_df['upper_mean_returns'] = models_data['upper'].apply(lambda x: np.mean(x) if isinstance(x, list) else np.nan)
+metrics_df.reset_index(names='symbol', inplace = True)
+metrics_df.to_csv('datasets/metrics_data.csv')
+metrics_df.set_index('symbol',inplace = True)
+# stocks content.
 data = []
 for ticker in tickers:
     info = yf.Ticker(ticker).info
@@ -93,7 +136,7 @@ stocks = {}
 for symbol in content_df.index:
     stocks[symbol] = content_df['sector'][symbol]
 
-# 2. Handle categorical features with One-Hot Encoding
+# Handle categorical features with One-Hot Encoding
 categorical_cols = ['sector', 'industry', 'region']
 encoder = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
 encoded_cat = encoder.fit_transform(content_df[categorical_cols])
@@ -110,13 +153,7 @@ scaled_num = scaler.fit_transform(num_df)
 scaled_num_df = pd.DataFrame(scaled_num, columns=numerical_cols)
 
 clean_df = pd.concat([scaled_num_df.reset_index(drop=True), encoded_cat_df.reset_index(drop=True)],axis=1)
-clean_df.to_csv("datasets/stocks_content&metrics_data.csv")
-
-#-------------------------------
-#making users synthatic data.
-#-------------------------------
-
-np.random.seed(42)
+clean_df.to_csv('datasets/stocks_content_data.csv')
 scaled_num_df['symbol'] = metrics_df.index
 scaled_num_df['sector'] = scaled_num_df['symbol'].map(stocks)
 
@@ -129,10 +166,12 @@ num_users = 100
 
 users = []
 for i in range(1, num_users+1):
+    sector1 = np.random.choice(sector_preferences)
+    sector2 = np.random.choice(sector_preferences)
     users.append({
         "user_id": f"U{i}",
         "risk": np.random.choice(risk_profiles, p=[0.4, 0.4, 0.2]),
-        "sector": np.random.choice(sector_preferences)
+        "sector": [sector1, sector2]
     })
 users_df = pd.DataFrame(users)
 
@@ -143,7 +182,7 @@ def get_investment_prob(stock_metrics, user_risk, user_sector):
     prob = 0.2  # base probability
 
     # Sector preference
-    if stock_metrics['sector'] == user_sector:
+    if stock_metrics['sector'] in user_sector:
         prob += 0.3
 
     # Risk-based adjustments
@@ -186,13 +225,12 @@ for _, row in users_df.iterrows():
     investment_data.append(inv)
 
 investments_df = pd.DataFrame(investment_data).set_index('user_id')
-
 # -----------------------------
-#  Ensure every stock has at least one investor
+# Ensure every stock has at least one investor
 # -----------------------------
 for stock in scaled_num_df['symbol']:
     if investments_df[stock].sum() == 0:
         random_user = np.random.choice(investments_df.index)
         investments_df.at[random_user, stock] = 1
 
-investments_df.to_csv("datasets/users_investments_data.csv")
+investments_df.to_csv('datasets/users_investment_data.csv')

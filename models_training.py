@@ -2,8 +2,8 @@ import pandas as pd
 import numpy as np
 import pickle
 from sklearn.preprocessing import MinMaxScaler
-import pmdarima as pm
 from arch import arch_model
+from statsmodels.tsa.arima.model import ARIMA
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import LSTM, Dropout, Dense, Input
 from sklearn.metrics import mean_squared_error as mse, mean_absolute_percentage_error
@@ -12,12 +12,32 @@ from itertools import product
 from statistical_tests import ljung_box_test, engle_arch_test
 from models_evaluation import compute_metrics, compute_ci_coverage, reliability_score
 
-def train_arima(series: pd.Series, seasonal: bool = False, m: int = 1):
-    model = pm.auto_arima(series, seasonal=seasonal, m=m, error_action='ignore', suppress_warnings=True)
-    return {'model': model, 'name': 'ARIMA', 'order': model.order, 'seasonal_order': model.seasonal_order}
+def train_arima(series, max_p=3, max_d=2, max_q=3):
+    best_aic = float("inf")
+    best_order = None
+    best_model = None
 
-def forecast_arima(model_obj, steps: int = 5):
-    return model_obj.predict(n_periods=steps)
+    for p, d, q in product(range(max_p+1), range(max_d+1), range(max_q+1)):
+        try:
+            model = ARIMA(series, order=(p,d,q)).fit()
+            if model.aic < best_aic:
+                best_aic = model.aic
+                best_order = (p,d,q)
+                best_model = model
+        except Exception:
+            continue
+
+    return {
+        "model": best_model,
+        "name": "ARIMA",
+        "order": best_order,
+        "aic": best_aic
+    }
+
+def forecast_arima(model_obj, steps=5):
+    fc = model_obj.get_forecast(steps=steps)
+    preds = fc.predicted_mean
+    return preds.values
 
 def build_lstm_functional(input_shape, lstm_units=50, dropout_rate=0.2, dense_units=1):
     inp = Input(shape=input_shape)
@@ -90,7 +110,7 @@ def build_arima(arima_train, n_test, arima_test):
     arima_res = train_arima(arima_train)
     arima_preds = forecast_arima(arima_res['model'], steps=n_test)
     # compute in-sample residuals for ARIMA
-    arima_in_sample_pred = arima_res['model'].predict_in_sample()
+    arima_in_sample_pred = arima_res['model'].fittedvalues
     arima_residuals = arima_train.values[-len(arima_in_sample_pred):] - arima_in_sample_pred
     returns, lower, upper = preds_to_returns( np.array(arima_preds), arima_residuals)
     
@@ -190,9 +210,7 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
 
     # Train ARIMA
     out['models']['arima'], out['tests']['arima_ljungbox'], out['tests']['arima_arch'] = build_arima(arima_train, n_test, arima_test)
-    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['arima']['returns'], out['models']['arima']['lower'], out['models']['arima']['upper'], title=f"{symbol} - ARIMA Forecast")
     out['models']['lstm'], out['tests']['lstm_ljungbox'], out['tests']['lstm_arch'] = build_lstm(x_train, y_train, x_test, y_test)
-    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['lstm']['returns'], out['models']['lstm']['lower'], out['models']['lstm']['upper'], title=f"{symbol} - LSTM Forecast")
 
     lstm_score = out['models']['lstm']['score']
     arima_score = out['models']['lstm']['score']
@@ -234,15 +252,12 @@ def pipeline_for_stock(symbol, df, forecast_horizon=10, stl_period=5, return_per
             if info['score'] > best_score:
                 best_score = info['score']
                 best_name = name
-                best_info = info
     if best_name == 'ensemble':
         best_model = out['models']['ensemble']
     elif best_name == 'arima':
         best_model = out['models']['arima']
     else:
         best_model = out['models']['lstm']
-    #plot_forecast(np.exp(arima_train).cumprod(), np.exp(arima_test).cumprod(), out['models']['ensemble']['returns'], out['models']['ensemble']['lower'], out['models']['ensemble']['upper'], title=f"{symbol} - ensemble Forecast")
-    
     return best_model
 
 # load_dataset
