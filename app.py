@@ -190,7 +190,7 @@ with col1:
     - 🚀 Predicted performance and volatility metrics  
     """)
 with col2:
-    st.image("https://cdn-icons-png.flaticon.com/512/2331/2331953.png", width=180)
+    st.image("https://img.freepik.com/free-vector/stock-market-concept-illustration_114360-7962.jpg", width=280)
 
 st.markdown("---")
 
@@ -250,5 +250,5 @@ if st.button("Get My Recommendations"):
                 st.pyplot(fig)
                 st.markdown(desc)
 
-st.markdown("--")
+st.markdown("---")
 st.caption("💡 Developed by **Prashu Poras | IIT Guwahati** · Powered by AI · © 2025")
