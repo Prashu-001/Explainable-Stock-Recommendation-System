@@ -162,16 +162,18 @@ scaled_num_df['sector'] = scaled_num_df['symbol'].map(stocks)
 # -----------------------------
 risk_profiles = ["Conservative", "Balanced", "Aggressive"]
 sector_preferences = list(set(stocks.values()))
-num_users = 100
+num_users = 1000
 
 users = []
 for i in range(1, num_users+1):
     sector1 = np.random.choice(sector_preferences)
     sector2 = np.random.choice(sector_preferences)
+    count = np.random.randint(1,4)
+    sectors = [sector1,sector2][:count]
     users.append({
         "user_id": f"U{i}",
         "risk": np.random.choice(risk_profiles, p=[0.4, 0.4, 0.2]),
-        "sector": [sector1, sector2]
+        "sector": sectors
     })
 users_df = pd.DataFrame(users)
 
@@ -183,17 +185,19 @@ def get_investment_prob(stock_metrics, user_risk, user_sector):
 
     # Sector preference
     if stock_metrics['sector'] in user_sector:
-        prob += 0.3
+        prob += 0.10
 
     # Risk-based adjustments
     if user_risk == "Conservative":
-        prob += (1 - stock_metrics['Volatility']) * 0.3  # low volatility boost
-        prob += stock_metrics['Mean_Return'] * 0.1
+        prob += (1 - stock_metrics['Volatility']) * 0.25  # low volatility boost
+        prob += stock_metrics['Mean_Return'] * 0.20
     elif user_risk == "Balanced":
         prob += (1 - abs(stock_metrics['Volatility'] - 0.5)) * 0.2
+        prob += stock_metrics['Mean_Return'] * 0.20
     elif user_risk == "Aggressive":
         prob += stock_metrics['Volatility'] * 0.3
-        prob += stock_metrics['CAGR'] * 0.2
+        prob += stock_metrics['CAGR'] * 0.1
+        prob += stock_metrics['Mean_Return'] * 0.1
 
     return min(max(prob, 0), 1)
 
@@ -205,7 +209,7 @@ def simulate_investments(user_risk, user_sector):
     probs = scaled_num_df.apply(lambda row: get_investment_prob(row, user_risk, user_sector), axis=1)
     
     # Randomly pick 5-10 stocks to invest in
-    k = np.random.randint(3, 11)
+    k = np.random.randint(2, 10)
     top_k_indices = probs.nlargest(k).index
     
     # Initialize all stocks as 0
