@@ -111,23 +111,91 @@ Similarity via fundamentals + performance metrics.
 
 User–user patterns based on synthetic 1000×58 investment matrix.
 
-3. Risk-Adjusted Ranking
 
-Uses profile-specific prediction formulas:
+🧮 Risk-Adjusted Ranking Algorithm
 
-Conservative
-```
-Pred_Score = (0.5*Pred_Signal + 0.35*Lower_Return + 0.15*Upper_Return) * (1 - Volatility)
-```
-Balanced
-```
-Pred_Score = (0.5*Pred_Signal + 0.25*Lower_Return + 0.25*Upper_Return) * (1 - |Volatility - 0.5|)
-```
+This system uses a custom scoring function to rank stocks based on a combination of:
 
-Aggressive
-```
-Pred_Score = (0.5*Pred_Signal + 0.15*Lower_Return + 0.35*Upper_Return) * Volatility
-```
+Forecasted price direction (pred_signal)
+
+Return distribution (lower_mean_returns, upper_mean_returns)
+
+Volatility
+
+User’s risk appetite
+
+The ranking is generated in two steps:
+
+1️⃣ Compute a Prediction Score
+
+A base prediction score is calculated for every stock:
+
+Pred_Score = 0.5 × Pred_Signal  
+           + 0.25 × Lower_Mean_Returns  
+           + 0.25 × Upper_Mean_Returns
+
+
+This captures both return potential and prediction confidence.
+
+2️⃣ Risk-Specific Adjustments
+
+Different investors interpret volatility differently.
+So we customize the score:
+
+### 🟦 Conservative Investors
+
+Prefer low-volatility, stable return stocks.
+
+Adjusted_Score = (0.5×Pred_Signal 
+                  + 0.35×Lower_Return 
+                  + 0.15×Upper_Return)  
+                  × (1 - Volatility)
+
+
+Rewards stocks with lower volatility
+
+Gives higher weight to downside protection
+
+🟩 Balanced / Others
+
+Prefer medium-risk opportunities.
+
+Adjusted_Score = Base_Score × (1 - |Volatility - 0.5|)
+
+
+Highest score when volatility ≈ 0.5
+
+Penalizes very low or very high volatility
+
+🟥 Aggressive Investors
+
+Prefer high-volatility, high-growth opportunities.
+
+Adjusted_Score = (0.5×Pred_Signal 
+                  + 0.15×Lower_Return 
+                  + 0.35×Upper_Return)  
+                  × Volatility
+
+
+Rewards high volatility + high upside returns
+
+🎯 Final Ranking
+
+After calculating the adjusted score, the system:
+
+Sorts all stocks in descending order of pred_score
+
+Returns top N ranked recommendations (default = 5)
+
+This makes the system:
+
+Personalized
+
+Transparent
+
+Fully explainable
+
+Mathematically grounded
 
 4. Hybrid Ranking
 
