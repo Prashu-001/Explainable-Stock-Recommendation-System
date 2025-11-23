@@ -3,10 +3,8 @@ import pandas as pd
 import numpy as np
 from math import pi
 
-# -----------------------------
 # Time series plot
-# -----------------------------
-def plot_series(series: pd.Series, title: str = "Series"):
+def plot_series(series, title = "Series"):
     fig, ax = plt.subplots(figsize=(10, 3))
     ax.plot(series.index, series.values, label=title, color='tab:blue')
     ax.set_title(title)
@@ -24,10 +22,8 @@ def plot_series(series: pd.Series, title: str = "Series"):
     return fig, explanation
 
 
-# -----------------------------
 # Forecast plot with confidence interval
-# -----------------------------
-def plot_forecast(test: pd.Series, preds: np.ndarray, lower=None, upper=None, title: str = "Forecast"):
+def plot_forecast(test, preds, lower=None, upper=None, title = "Forecast"):
     fig, ax = plt.subplots(figsize=(10, 4))
     ax.plot(test.index, test.values, label='True', color='black')
     ax.plot(test.index, preds, label='Predicted', color='red', linestyle='--')
@@ -42,15 +38,13 @@ def plot_forecast(test: pd.Series, preds: np.ndarray, lower=None, upper=None, ti
     explanation = (
         f"**{title}** compares model predictions (red dashed line) with the actual values (black line). "
         "If the predicted and actual lines overlap closely, the model performs well. "
-        "The shaded region (if shown) represents uncertainty — wider intervals indicate more uncertainty."
+        "The shaded region represents uncertainty, wider intervals indicate more uncertainty."
     )
 
     return fig, explanation
 
 
-# -----------------------------
 # Stock radar chart
-# -----------------------------
 def plot_stock_radar(symbols, df):
     features = ['CAGR', 'Volatility', 'Sharpe_Ratio', 'Mean_Return']
     N = len(features)
@@ -72,15 +66,13 @@ def plot_stock_radar(symbols, df):
     explanation = (
         "This **radar chart** compares multiple stocks across four performance metrics: "
         "**CAGR (growth rate)**, **Volatility (risk)**, **Sharpe Ratio (risk-adjusted return)**, "
-        "and **Mean Return**. Each line represents a stock — a larger and more balanced area "
+        "and **Mean Return**. Each line represents a stock, a larger and more balanced area "
         "generally indicates better overall performance with lower risk."
     )
 
     return fig, explanation
 
-# -----------------------------
 # Feature similarity bar plot
-# -----------------------------
 def plot_feature_similarity(target, recs, df, features):
     target_vec = df.loc[target, features]
     diffs = {}
@@ -102,9 +94,7 @@ def plot_feature_similarity(target, recs, df, features):
     return fig, explanation
 
 
-# -----------------------------
-# Volatility vs CAGR scatter plot
-# -----------------------------
+#Volatility vs CAGR scatter plot
 def plot_volatility_cagr(metrics_df: pd.DataFrame, recommend, taken_stocks):
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.scatter(metrics_df['Volatility'], metrics_df['CAGR'], alpha=0.5, label="All Stocks")
