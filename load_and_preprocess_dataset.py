@@ -9,36 +9,36 @@ from sklearn.impute import KNNImputer
 np.random.seed(42)
 
 tickers = [
-    #------Tech/IT------
+    #Tech/IT
     "TCS.NS","INFY.NS","HCLTECH.NS","TECHM.NS","LTIM.NS","WIPRO.NS","COFORGE.NS",
     "PERSISTENT.NS","MPHASIS.NS",
 
-    # ---- Banking & Financial Services ----
+    # Banking & Financial Services
     "HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","KOTAKBANK.NS","AXISBANK.NS",
     "BAJFINANCE.NS","HDFCAMC.NS","HDFCLIFE.NS","YESBANK.NS",
 
-    # ---- Fintech / Digital ----
+    # Fintech / Digital
     "PAYTM.NS","POLICYBZR.NS",
 
-    # ---- Pharma & Healthcare ----
+    #Pharma & Healthcare
     "SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS","LUPIN.NS","DIVISLAB.NS",
     "APOLLOHOSP.NS","FORTIS.NS",
 
-    # ---- Energy / Oil & Gas ----
+    #Energy / Oil & Gas
     "RELIANCE.NS","ONGC.NS","POWERGRID.NS","IOC.NS","GAIL.NS","BPCL.NS",
-    # ---- Utilities (Renewables, Power) ----
+    #Utilities (Renewables, Power)
     "NTPC.NS","ADANIGREEN.NS","TATAPOWER.NS",
-    # ---- Consumer Defensive / FMCG ----
+    # Consumer Defensive / FMCG
     "HINDUNILVR.NS","NESTLEIND.NS","BRITANNIA.NS","DABUR.NS","GODREJCP.NS",
     "ITC.NS","MARICO.NS",
-    # ---- Consumer Cyclical / Auto ----
+    # Consumer Cyclical / Auto
     "MARUTI.NS","TATAMOTORS.NS","HEROMOTOCO.NS","EICHERMOT.NS","BOSCHLTD.NS",
     "BAJAJ-AUTO.NS",
-    # ---- Metals & Mining ----
+    # Metals & Mining
     "TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS",
-    # ---- Telecom ----
+    #Telecom 
     "BHARTIARTL.NS","IDEA.NS",
-    # ---- Infrastructure / Industrials ----
+    # Infrastructure / Industrials
     "LT.NS","ADANIENT.NS","ULTRACEMCO.NS","SHREECEM.NS"
 ]
 
@@ -157,9 +157,7 @@ clean_df.to_csv('datasets/stocks_content_data.csv')
 scaled_num_df['symbol'] = metrics_df.index
 scaled_num_df['sector'] = scaled_num_df['symbol'].map(stocks)
 
-# -----------------------------
 # Create user profiles
-# -----------------------------
 risk_profiles = ["Conservative", "Balanced", "Aggressive"]
 sector_preferences = list(set(stocks.values()))
 num_users = 1000
@@ -177,9 +175,7 @@ for i in range(1, num_users+1):
     })
 users_df = pd.DataFrame(users)
 
-# -----------------------------
 # Investment probability function
-# -----------------------------
 def get_investment_prob(stock_metrics, user_risk, user_sector):
     prob = 0.2  # base probability
 
@@ -187,9 +183,9 @@ def get_investment_prob(stock_metrics, user_risk, user_sector):
     if stock_metrics['sector'] in user_sector:
         prob += 0.10
 
-    # Risk-based adjustments
+    # Risk based adjustments
     if user_risk == "Conservative":
-        prob += (1 - stock_metrics['Volatility']) * 0.25  # low volatility boost
+        prob += (1 - stock_metrics['Volatility']) * 0.25  #low volatility boost
         prob += stock_metrics['Mean_Return'] * 0.20
     elif user_risk == "Balanced":
         prob += (1 - abs(stock_metrics['Volatility'] - 0.5)) * 0.2
@@ -201,9 +197,7 @@ def get_investment_prob(stock_metrics, user_risk, user_sector):
 
     return min(max(prob, 0), 1)
 
-# -----------------------------
-# Simulate investments with top-k stocks
-# -----------------------------
+#Simulate investments with top k stocks
 def simulate_investments(user_risk, user_sector):
     # Calculate probability for each stock
     probs = scaled_num_df.apply(lambda row: get_investment_prob(row, user_risk, user_sector), axis=1)
@@ -215,23 +209,22 @@ def simulate_investments(user_risk, user_sector):
     # Initialize all stocks as 0
     investments = {stock: 0 for stock in scaled_num_df['symbol']}
     
-    # Mark top-k stocks as invested
+    #Mark top k stocks as invested
     for idx in top_k_indices:
         investments[scaled_num_df.loc[idx, 'symbol']] = 1
     
     return investments
 
-# Generate investment matrix
+#Generate investment matrix
 investment_data = []
-for _, row in users_df.iterrows():
+for _ , row in users_df.iterrows():
     inv = simulate_investments(row['risk'], row['sector'])
     inv['user_id'] = row['user_id']
     investment_data.append(inv)
 
 investments_df = pd.DataFrame(investment_data).set_index('user_id')
-# ----------------------------
+
 # Ensure every stock has at least one investor
-# ----------------------------
 for stock in scaled_num_df['symbol']:
     if investments_df[stock].sum() == 0:
         random_user = np.random.choice(investments_df.index)
