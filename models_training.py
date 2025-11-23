@@ -54,7 +54,6 @@ def tune_lstm(x_train, y_train,x_test, y_test, lstm_units_list=[64,86,128], drop
     best_params = {}
     
     for lstm_units, dropout_rate in product(lstm_units_list, dropout_list):
-        #x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
         model = build_lstm_functional((x_train.shape[1],1), lstm_units=lstm_units, dropout_rate=dropout_rate)
         model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
         preds = model.predict(x_test, verbose=0).flatten()
@@ -79,7 +78,7 @@ def forecast_lstm(model_obj, series: pd.Series, steps: int = 5) -> np.ndarray:
     return np.array(preds)
 
 def train_garch(returns: pd.Series, p: int = 1, q: int = 1, mean: str = 'Zero', vol: str = 'Garch', dist: str = 'normal'):
-    # returns should be a stationary series (log-returns or resid in returns)
+    #returns should be a stationary series
     am = arch_model(returns, mean=mean, vol=vol, p=p, q=q, dist=dist)
     res = am.fit(disp='off')
     return {'model': res, 'name': f'GARCH({p},{q})'}
@@ -89,7 +88,6 @@ def forecast_garch(res, horizon: int = 5):
     # variance forecasts for next horizon steps
     var_fc = fc.variance.iloc[-1].values  # shape (horizon,)
     std_fc = np.sqrt(var_fc)
-    # sometimes fc.mean exists, otherwise zeros.
     mean_fc = None
     try:
         mean_fc = fc.mean.iloc[-1].values
@@ -97,11 +95,11 @@ def forecast_garch(res, horizon: int = 5):
         mean_fc = np.zeros_like(std_fc)
     return {'variance': var_fc, 'std': std_fc, 'mean': mean_fc}
 
-def preds_to_returns(preds: np.ndarray, residuals):
+def preds_to_returns(preds, residuals):
     returns = np.exp(preds).cumprod()
     
     # naive CI using in-sample resid std (heuristic)
-    resid_std = np.std(residuals) if residuals is not None else 0.0
+    resid_std = np.std(residuals)
     lower = returns - 1.96 * resid_std
     upper = returns + 1.96 * resid_std
     return returns, lower, upper
@@ -126,15 +124,13 @@ def build_arima(arima_train, n_test, arima_test):
         model = 'ARIMA-GARCH'
         garch_res = train_garch(res_series, p=1, q=1)
         garch_fc = forecast_garch(garch_res['model'], horizon=n_test)
-        # combine ARIMA mean (in model-space) + GARCH std to form probabilistic forecasts (model-space)
+        # combine ARIMA mean + GARCH std to form probabilistic forecasts
         stds = garch_fc['std']  # std of returns for each horizon
         mean_preds = np.array(arima_preds)
         # cumulative variances
         cum_var = np.cumsum(garch_fc['variance'])
         lower = np.exp(np.cumsum(mean_preds) - 1.96 * np.sqrt(cum_var))
         upper = np.exp(np.cumsum(mean_preds) + 1.96 * np.sqrt(cum_var))
-        #lower = last_price * np.exp(mean_preds - 1.96 * garch_fc['variance'])
-        #upper = last_price * np.exp(mean_preds + 1.96 * garch_fc['variance'])
         
     # evaluate against true prices
     metrics = compute_metrics(arima_test.values, arima_preds)
@@ -149,7 +145,7 @@ def build_arima(arima_train, n_test, arima_test):
                             'upper': upper.tolist(),'metrics': metrics, 'ci_cov': ci_cov, 'score': score}, arima_ljungbox, arima_arch
 
 def build_lstm(x_train, y_train,x_test, y_test):
-     # Train LSTM on series_model (prefer stationary series)
+     # Train LSTM on series_model
     lstm_res = tune_lstm(x_train, y_train,x_test, y_test)
     # convert to price if needed
     lstm_returns, lower, upper = preds_to_returns(np.array(lstm_res['preds']), lstm_res['residuals'])
