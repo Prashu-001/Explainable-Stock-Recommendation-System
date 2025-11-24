@@ -247,18 +247,17 @@ cd Explainable-Stock-Recommendation-System
 pip install -r requirements.txt
 ```
 
-3. Preprocess Dataset
-```
-python load_and_preprocess_dataset.py
-```
-
-4. Train Models
+3. Train Models
 ```
 python models_training.py
 ```
-5. Evaluate Models
+4. Evaluate Models
 ```
 python models_evaluation.py
+```
+5. Preprocess Dataset
+```
+python load_and_preprocess_dataset.py
 ```
 
 6. Run Statistical Tests (optional)
