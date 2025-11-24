@@ -246,31 +246,23 @@ cd Explainable-Stock-Recommendation-System
 ```
 pip install -r requirements.txt
 ```
-
-3. Train Models
-```
-python models_training.py
-```
-4. Evaluate Models
+3. Evaluate Models
 ```
 python models_evaluation.py
 ```
-5. Preprocess Dataset
-```
-python load_and_preprocess_dataset.py
-```
-
-6. Run Statistical Tests (optional)
+4. Statistical Tests
 ```
 python statistical_tests.py
 ```
-
-8. System-Level Evaluation
+5. Train Models
 ```
-python system_evaluation.py
+python models_training.py
 ```
-
-9. Launch the Streamlit App
+6. Preprocess Dataset
+```
+python load_and_preprocess_dataset.py
+```
+7. Launch the Streamlit App
 ```
 streamlit run app.py
 ```
